@@ -89,6 +89,7 @@ fn app() -> Result<(), FatalError> {
     );
 
     let mut renderer_choice = RendererChoice::Cpu;
+    let mut max_iterations = 256_u32;
 
     const ZOOM_MULTIPLIER: f32 = 1.25;
     const ZOOM_MULTIPLIER_INV: f32 = 1.0 / ZOOM_MULTIPLIER;
@@ -139,15 +140,35 @@ fn app() -> Result<(), FatalError> {
                     scancode: Some(Scancode::Num2),
                     ..
                 } => renderer_choice = RendererChoice::Opencl,
+                Event::KeyDown {
+                    scancode: Some(Scancode::Period),
+                    ..
+                } => {
+                    if let Some(new_value) = max_iterations.checked_mul(2) {
+                        max_iterations = new_value;
+                    }
+                }
+                Event::KeyDown {
+                    scancode: Some(Scancode::Comma),
+                    ..
+                } => {
+                    if let Some(new_value @ 1..) = max_iterations.checked_div(2) {
+                        max_iterations = new_value;
+                    }
+                }
                 _ => (),
             }
         }
 
         canvas.clear();
         let (image, duration) = match renderer_choice {
-            RendererChoice::Cpu => measure_render(&mut cpu_renderer, center, radius, 1024).unwrap(),
-            RendererChoice::Opencl => measure_render(&mut opencl_renderer, center, radius, 1024)
-                .map_err(OpenclError::from)?,
+            RendererChoice::Cpu => {
+                measure_render(&mut cpu_renderer, center, radius, max_iterations).unwrap()
+            }
+            RendererChoice::Opencl => {
+                measure_render(&mut opencl_renderer, center, radius, max_iterations)
+                    .map_err(OpenclError::from)?
+            }
         };
         image
             .write_to_texture(&mut texture)
@@ -155,7 +176,7 @@ fn app() -> Result<(), FatalError> {
         canvas.copy(&texture, None, None).map_err(SdlError::from)?;
         let text = font
             .render(&format!(
-                "{}\nTime to render: {:.2} ms",
+                "{}\nTime to render: {:.2} ms\nMax iterations: {max_iterations}",
                 match renderer_choice {
                     RendererChoice::Cpu => "Multithreaded Scalar CPU",
                     RendererChoice::Opencl => &opencl_display_string,
