@@ -56,6 +56,10 @@ impl OpenclRenderer {
             buffer,
         })
     }
+
+    pub fn device_name(&self) -> Result<String, ClError> {
+        Device::new(self.queue.device()?).name()
+    }
 }
 
 impl Renderer<f32> for OpenclRenderer {

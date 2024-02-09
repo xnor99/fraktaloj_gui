@@ -1,6 +1,7 @@
 use opencl3::error_codes::ClError;
 use sdl2::{
     render::{TextureValueError, UpdateTextureError},
+    ttf::{FontError, InitError},
     video::WindowBuildError,
     IntegerOrSdlError,
 };
@@ -13,6 +14,8 @@ pub enum SdlError {
     IntegerOrSdlError(IntegerOrSdlError),
     WriteToTextureError(WriteToTextureError),
     TextureValueError(TextureValueError),
+    TtfInitError(InitError),
+    FontError(FontError),
 }
 
 impl From<String> for SdlError {
@@ -42,6 +45,18 @@ impl From<WriteToTextureError> for SdlError {
 impl From<TextureValueError> for SdlError {
     fn from(value: TextureValueError) -> Self {
         Self::TextureValueError(value)
+    }
+}
+
+impl From<InitError> for SdlError {
+    fn from(value: InitError) -> Self {
+        Self::TtfInitError(value)
+    }
+}
+
+impl From<FontError> for SdlError {
+    fn from(value: FontError) -> Self {
+        Self::FontError(value)
     }
 }
 

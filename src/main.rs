@@ -1,17 +1,53 @@
 #![feature(never_type)]
 
-use std::{num::NonZeroUsize, process::ExitCode};
+use std::{
+    num::NonZeroUsize,
+    process::ExitCode,
+    time::{Duration, Instant},
+};
 
 use error::{FatalError, SdlError};
+use iteration_image::IterationImage;
 use num::{Complex, Zero};
 use render::Renderer;
-use sdl2::{event::Event, keyboard::Scancode, pixels::PixelFormatEnum};
+use sdl2::{
+    event::Event,
+    keyboard::Scancode,
+    pixels::{Color, PixelFormatEnum},
+    rwops::RWops,
+    ttf,
+};
 
-use crate::render::opencl::OpenclRenderer;
+use crate::{
+    error::OpenclError,
+    render::{cpu::ScalarCpuRenderer, opencl::OpenclRenderer},
+};
 
 mod error;
 mod iteration_image;
 mod render;
+
+static FONT: &[u8] = include_bytes!("font.ttf");
+
+fn measure_render<T, R: Renderer<T>>(
+    renderer: &mut R,
+    center: Complex<T>,
+    horizontal_radius: T,
+    max_iterations: u32,
+) -> Result<(IterationImage, Duration), R::Error> {
+    let instant = Instant::now();
+    let result = renderer.render(center, horizontal_radius, max_iterations);
+    let duration = instant.elapsed();
+    match result {
+        Ok(image) => Ok((image, duration)),
+        Err(error) => Err(error),
+    }
+}
+
+enum RendererChoice {
+    Cpu,
+    Opencl,
+}
 
 fn app() -> Result<(), FatalError> {
     let sdl = sdl2::init().map_err(SdlError::from)?;
@@ -32,15 +68,27 @@ fn app() -> Result<(), FatalError> {
         .create_texture_streaming(Some(PixelFormatEnum::RGB24), 1920, 1080)
         .map_err(SdlError::from)?;
 
-    // let mut renderer = ScalarCpuRenderer::new(
-    //     NonZeroUsize::new(1920).unwrap(),
-    //     NonZeroUsize::new(1080).unwrap(),
-    // )?;
+    let ttf_context = ttf::init().map_err(SdlError::from)?;
+    let font = ttf_context
+        .load_font_from_rwops(RWops::from_bytes(FONT).map_err(SdlError::from)?, 48)
+        .map_err(SdlError::from)?;
 
-    let mut renderer = OpenclRenderer::new(
+    let mut cpu_renderer = ScalarCpuRenderer::new(
         NonZeroUsize::new(1920).unwrap(),
         NonZeroUsize::new(1080).unwrap(),
     )?;
+
+    let mut opencl_renderer = OpenclRenderer::new(
+        NonZeroUsize::new(1920).unwrap(),
+        NonZeroUsize::new(1080).unwrap(),
+    )?;
+
+    let opencl_display_string = format!(
+        "OpenCL: {}",
+        opencl_renderer.device_name().map_err(OpenclError::from)?
+    );
+
+    let mut renderer_choice = RendererChoice::Cpu;
 
     const ZOOM_MULTIPLIER: f32 = 1.25;
     const ZOOM_MULTIPLIER_INV: f32 = 1.0 / ZOOM_MULTIPLIER;
@@ -83,18 +131,50 @@ fn app() -> Result<(), FatalError> {
                     center = Complex::zero();
                     radius = 2.0;
                 }
+                Event::KeyDown {
+                    scancode: Some(Scancode::Num1),
+                    ..
+                } => renderer_choice = RendererChoice::Cpu,
+                Event::KeyDown {
+                    scancode: Some(Scancode::Num2),
+                    ..
+                } => renderer_choice = RendererChoice::Opencl,
                 _ => (),
             }
         }
 
         canvas.clear();
-        let image = renderer.render(center, radius, 64).unwrap();
+        let (image, duration) = match renderer_choice {
+            RendererChoice::Cpu => measure_render(&mut cpu_renderer, center, radius, 1024).unwrap(),
+            RendererChoice::Opencl => measure_render(&mut opencl_renderer, center, radius, 1024)
+                .map_err(OpenclError::from)?,
+        };
         image
             .write_to_texture(&mut texture)
             .map_err(SdlError::from)?;
+        canvas.copy(&texture, None, None).map_err(SdlError::from)?;
+        let text = font
+            .render(&format!(
+                "{}\nTime to render: {:.2} ms",
+                match renderer_choice {
+                    RendererChoice::Cpu => "Multithreaded Scalar CPU",
+                    RendererChoice::Opencl => &opencl_display_string,
+                },
+                duration.as_secs_f64() * 1e3
+            ))
+            .blended_wrapped(Color::RED, 0)
+            .map_err(SdlError::from)?;
+        let rect = {
+            let mut rect = text.rect();
+            rect.offset(16, 16);
+            rect
+        };
+        let text_texture = texture_creator
+            .create_texture_from_surface(text)
+            .map_err(SdlError::from)?;
         canvas
-            .copy(&texture, None, None)
-            .map_err(SdlError::Message)?;
+            .copy(&text_texture, None, rect)
+            .map_err(SdlError::from)?;
         canvas.present();
     }
     Ok(())
