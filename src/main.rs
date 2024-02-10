@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use error::{FatalError, SdlError};
+use error::{FatalError, IntegerOverflow, SdlError};
 use iteration_image::IterationImage;
 use num::{Complex, Zero};
 use render::Renderer;
@@ -49,11 +49,43 @@ enum RendererChoice {
     Opencl,
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct Dimensions {
+    width: NonZeroUsize,
+    height: NonZeroUsize,
+}
+
+impl From<(NonZeroUsize, NonZeroUsize)> for Dimensions {
+    fn from((width, height): (NonZeroUsize, NonZeroUsize)) -> Self {
+        Self { width, height }
+    }
+}
+
+impl TryFrom<(u32, u32)> for Dimensions {
+    type Error = IntegerOverflow;
+
+    fn try_from((width, height): (u32, u32)) -> Result<Self, Self::Error> {
+        Ok(Self {
+            width: NonZeroUsize::new(width.try_into()?).ok_or(IntegerOverflow)?,
+            height: NonZeroUsize::new(height.try_into()?).ok_or(IntegerOverflow)?,
+        })
+    }
+}
+
 fn app() -> Result<(), FatalError> {
     let sdl = sdl2::init().map_err(SdlError::from)?;
     let video = sdl.video().map_err(SdlError::from)?;
+    let mut window_dimensions = Dimensions::from((
+        NonZeroUsize::new(1280).unwrap(),
+        NonZeroUsize::new(720).unwrap(),
+    ));
     let window = video
-        .window("Fraktaloj GUI", 1920, 1080)
+        .window(
+            "Fraktaloj GUI",
+            window_dimensions.width.get().try_into()?,
+            window_dimensions.height.get().try_into()?,
+        )
+        .resizable()
         .build()
         .map_err(SdlError::from)?;
     let mut canvas = window
@@ -65,23 +97,23 @@ fn app() -> Result<(), FatalError> {
 
     let texture_creator = canvas.texture_creator();
     let mut texture = texture_creator
-        .create_texture_streaming(Some(PixelFormatEnum::RGB24), 1920, 1080)
+        .create_texture_streaming(
+            Some(PixelFormatEnum::RGB24),
+            window_dimensions.width.get().try_into()?,
+            window_dimensions.height.get().try_into()?,
+        )
         .map_err(SdlError::from)?;
 
     let ttf_context = ttf::init().map_err(SdlError::from)?;
-    let font = ttf_context
-        .load_font_from_rwops(RWops::from_bytes(FONT).map_err(SdlError::from)?, 48)
+    let mut font = ttf_context
+        .load_font_from_rwops(RWops::from_bytes(FONT).map_err(SdlError::from)?, 32)
         .map_err(SdlError::from)?;
 
-    let mut cpu_renderer = ScalarCpuRenderer::new(
-        NonZeroUsize::new(1920).unwrap(),
-        NonZeroUsize::new(1080).unwrap(),
-    )?;
+    let mut cpu_renderer =
+        ScalarCpuRenderer::new(window_dimensions.width, window_dimensions.height)?;
 
-    let mut opencl_renderer = OpenclRenderer::new(
-        NonZeroUsize::new(1920).unwrap(),
-        NonZeroUsize::new(1080).unwrap(),
-    )?;
+    let mut opencl_renderer =
+        OpenclRenderer::new(window_dimensions.width, window_dimensions.height)?;
 
     let opencl_display_string = format!(
         "OpenCL: {}",
@@ -160,6 +192,26 @@ fn app() -> Result<(), FatalError> {
             }
         }
 
+        let current_window_dimensions = Dimensions::try_from(canvas.window().size())?;
+        if current_window_dimensions != window_dimensions {
+            cpu_renderer.resize(current_window_dimensions)?;
+            opencl_renderer.resize(current_window_dimensions)?;
+            texture = texture_creator
+                .create_texture_streaming(
+                    Some(PixelFormatEnum::RGB24),
+                    current_window_dimensions.width.get().try_into()?,
+                    current_window_dimensions.height.get().try_into()?,
+                )
+                .map_err(SdlError::from)?;
+            font = ttf_context
+                .load_font_from_rwops(
+                    RWops::from_bytes(FONT).map_err(SdlError::from)?,
+                    (current_window_dimensions.width.get() as f64 * 0.025) as u16,
+                )
+                .map_err(SdlError::from)?;
+            window_dimensions = current_window_dimensions;
+        }
+
         canvas.clear();
         let (image, duration) = match renderer_choice {
             RendererChoice::Cpu => {
@@ -176,12 +228,14 @@ fn app() -> Result<(), FatalError> {
         canvas.copy(&texture, None, None).map_err(SdlError::from)?;
         let text = font
             .render(&format!(
-                "{}\nTime to render: {:.2} ms\nMax iterations: {max_iterations}",
+                "{}\nTime to render: {:.2} ms\nMax iterations: {max_iterations}\nCurrent window resolution: {}x{}",
                 match renderer_choice {
                     RendererChoice::Cpu => "Multithreaded Scalar CPU",
                     RendererChoice::Opencl => &opencl_display_string,
                 },
-                duration.as_secs_f64() * 1e3
+                duration.as_secs_f64() * 1e3,
+                window_dimensions.width,
+                window_dimensions.height
             ))
             .blended_wrapped(Color::RED, 0)
             .map_err(SdlError::from)?;

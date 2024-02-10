@@ -1,3 +1,5 @@
+use std::num::TryFromIntError;
+
 use opencl3::error_codes::ClError;
 use sdl2::{
     render::{TextureValueError, UpdateTextureError},
@@ -63,6 +65,12 @@ impl From<FontError> for SdlError {
 #[derive(Debug)]
 pub struct IntegerOverflow;
 
+impl From<TryFromIntError> for IntegerOverflow {
+    fn from(_value: TryFromIntError) -> Self {
+        Self
+    }
+}
+
 #[derive(Debug)]
 pub enum FatalError {
     SdlError(SdlError),
@@ -84,6 +92,12 @@ impl From<OpenclError> for FatalError {
 
 impl From<IntegerOverflow> for FatalError {
     fn from(_value: IntegerOverflow) -> Self {
+        Self::IntegerOverflow
+    }
+}
+
+impl From<TryFromIntError> for FatalError {
+    fn from(_value: TryFromIntError) -> Self {
         Self::IntegerOverflow
     }
 }

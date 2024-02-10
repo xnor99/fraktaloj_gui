@@ -12,7 +12,7 @@ use opencl3::{
     types::CL_NON_BLOCKING,
 };
 
-use crate::{error::OpenclError, iteration_image::IterationImage};
+use crate::{error::OpenclError, iteration_image::IterationImage, Dimensions};
 
 use super::Renderer;
 
@@ -21,6 +21,7 @@ static KERNEL_SOURCE: &str = include_str!("kernel.cl");
 pub struct OpenclRenderer {
     width: NonZeroUsize,
     height: NonZeroUsize,
+    context: Context,
     queue: CommandQueue,
     kernel: Kernel,
     buffer: Buffer<u32>,
@@ -38,7 +39,7 @@ impl OpenclRenderer {
         let program = Program::create_and_build_from_source(&context, KERNEL_SOURCE, "")?;
         let kernel = Kernel::create(&program, "render")?;
         let buffer = unsafe {
-            Buffer::<u32>::create(
+            Buffer::create(
                 &context,
                 0,
                 width
@@ -51,6 +52,7 @@ impl OpenclRenderer {
         Ok(Self {
             width,
             height,
+            context,
             queue,
             kernel,
             buffer,
@@ -59,6 +61,23 @@ impl OpenclRenderer {
 
     pub fn device_name(&self) -> Result<String, ClError> {
         Device::new(self.queue.device()?).name()
+    }
+
+    pub fn resize(&mut self, Dimensions { width, height }: Dimensions) -> Result<(), OpenclError> {
+        self.buffer = unsafe {
+            Buffer::create(
+                &self.context,
+                0,
+                width
+                    .checked_mul(height)
+                    .ok_or(OpenclError::IntegerOverflow)?
+                    .get(),
+                ptr::null_mut(),
+            )
+        }?;
+        self.width = width;
+        self.height = height;
+        Ok(())
     }
 }
 

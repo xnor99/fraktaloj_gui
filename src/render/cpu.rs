@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 use num::{traits::float::FloatCore, Complex, Zero};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
-use crate::{error::IntegerOverflow, iteration_image::IterationImage};
+use crate::{error::IntegerOverflow, iteration_image::IterationImage, Dimensions};
 
 use super::Renderer;
 
@@ -23,6 +23,17 @@ impl ScalarCpuRenderer {
                 width.checked_mul(height).ok_or(IntegerOverflow)?.get()
             ],
         })
+    }
+
+    pub fn resize(
+        &mut self,
+        Dimensions { width, height }: Dimensions,
+    ) -> Result<(), IntegerOverflow> {
+        self.iteration_image_buffer =
+            vec![0; width.checked_mul(height).ok_or(IntegerOverflow)?.get()];
+        self.width = width;
+        self.height = height;
+        Ok(())
     }
 }
 
