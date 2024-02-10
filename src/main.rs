@@ -91,8 +91,8 @@ fn app() -> Result<(), FatalError> {
     let mut renderer_choice = RendererChoice::Cpu;
     let mut max_iterations = 256_u32;
 
-    const ZOOM_MULTIPLIER: f32 = 1.25;
-    const ZOOM_MULTIPLIER_INV: f32 = 1.0 / ZOOM_MULTIPLIER;
+    const ZOOM_MULTIPLIER: f64 = 1.25;
+    const ZOOM_MULTIPLIER_INV: f64 = 1.0 / ZOOM_MULTIPLIER;
 
     let mut center = Complex::zero();
     let mut radius = 2.0;

@@ -62,13 +62,13 @@ impl OpenclRenderer {
     }
 }
 
-impl Renderer<f32> for OpenclRenderer {
+impl Renderer<f64> for OpenclRenderer {
     type Error = ClError;
 
     fn render(
         &mut self,
-        center: Complex<f32>,
-        horizontal_radius: f32,
+        center: Complex<f64>,
+        horizontal_radius: f64,
         max_iterations: u32,
     ) -> Result<IterationImage, Self::Error> {
         // Shouldn't overflow because the check was done during object construction
