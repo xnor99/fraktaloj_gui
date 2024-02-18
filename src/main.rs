@@ -16,6 +16,7 @@ use sdl2::{
     pixels::{Color, PixelFormatEnum},
     rwops::RWops,
     ttf,
+    video::FullscreenType,
 };
 
 use crate::{
@@ -94,6 +95,8 @@ fn app() -> Result<(), FatalError> {
         .build()
         .map_err(SdlError::from)?;
     let mut events = sdl.event_pump().map_err(SdlError::from)?;
+
+    let mut fullscreen = false;
 
     let texture_creator = canvas.texture_creator();
     let mut texture = texture_creator
@@ -186,6 +189,27 @@ fn app() -> Result<(), FatalError> {
                 } => {
                     if let Some(new_value @ 1..) = max_iterations.checked_div(2) {
                         max_iterations = new_value;
+                    }
+                }
+                Event::KeyDown {
+                    scancode: Some(Scancode::F11),
+                    ..
+                } => {
+                    fullscreen = !fullscreen;
+                    canvas
+                        .window_mut()
+                        .set_fullscreen(if fullscreen {
+                            FullscreenType::True
+                        } else {
+                            FullscreenType::Off
+                        })
+                        .map_err(SdlError::from)?;
+                    if fullscreen {
+                        let display_mode = video.desktop_display_mode(0).map_err(SdlError::from)?;
+                        canvas
+                            .window_mut()
+                            .set_size(display_mode.w as u32, display_mode.h as u32)
+                            .map_err(SdlError::from)?;
                     }
                 }
                 _ => (),
